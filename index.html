@@ -291,14 +291,14 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
 <div id="map"></div>
 
 <div id="coord-search">
-  <input id="coord-input" type="text" placeholder="Paste coordinates: -7.5, 112.7" autocomplete="off">
+  <input id="coord-input" type="text" placeholder="Demo: -7.76132, 112.52638 (Jurang Kuali)" autocomplete="off">
   <button id="coord-btn">Search</button>
   <div id="coord-error"></div>
 </div>
 
 <div id="welcome">
   <h2>Agronomic Intelligence Platform</h2>
-  <p>Click anywhere in Indonesia, or paste coordinates in the search box,<br>to see soil, climate, and recommendations</p>
+  <p>Demo point: Jurang Kuali potato centre, Kota Batu.<br>Click elsewhere or paste coordinates to screen another location.</p>
 </div>
 
 <div id="sidebar">
@@ -473,6 +473,13 @@ let lastPlaceFetch = 0;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DATA_DIR = 'data/';
 const NOMINATIM = 'https://nominatim.openstreetmap.org/reverse';
+/** Default demo point: Jurang Kuali potato area, Sumberbrantas, Kota Batu. */
+const DEFAULT_POC = {
+  lat: -7.76132,
+  lon: 112.52638,
+  zoom: 13,
+  label: 'Jurang Kuali, Kota Batu (potato centre)',
+};
 
 async function fetchData(name, kind) {
   const resp = await fetch(DATA_DIR + name);
@@ -499,7 +506,10 @@ async function initApp() {
 
     bar.style.width = '100%';
     text.textContent = 'Ready';
-    setTimeout(() => document.getElementById('loading').classList.add('hidden'), 300);
+    setTimeout(() => {
+      document.getElementById('loading').classList.add('hidden');
+      openDefaultPoc();
+    }, 300);
   } catch (e) {
     text.textContent = 'Could not load the data: ' + e.message;
     bar.style.width = '100%';
@@ -514,8 +524,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 async function initMap() {
   const mapEl = document.getElementById('map');
   map = L.map('map', {
-    center: [-2.5, 118],
-    zoom: 5,
+    center: [DEFAULT_POC.lat, DEFAULT_POC.lon],
+    zoom: DEFAULT_POC.zoom,
     minZoom: 4,
     zoomControl: true,
     maxBounds: [[-15, 90], [10, 145]],
@@ -656,6 +666,12 @@ async function initMap() {
 
   initCoordSearch();
   initClimateVarTabs();
+}
+
+function openDefaultPoc() {
+  if (!map) return;
+  map.setView([DEFAULT_POC.lat, DEFAULT_POC.lon], DEFAULT_POC.zoom);
+  onMapClick({ latlng: { lat: DEFAULT_POC.lat, lng: DEFAULT_POC.lon } });
 }
 
 // ── Coordinate Search ─────────────────────────────────────────────
