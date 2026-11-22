@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agronomic Intelligence | Marcelinus Alfasisurya Setya Adhiwibawa</title>
+<meta name="description" content="Click any location in Indonesia to see its soil profile, rainfall, a six-month climate outlook, and a simple fertility screen.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;overflow:hidden}
+#map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1}
+
+/* ── Sidebar ───────────────────────────────────────── */
+#sidebar{
+  position:absolute;top:0;right:-460px;width:460px;height:100%;
+  background:#1a1f2e;color:#e0e0e0;z-index:1000;
+  transition:right .35s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;
+  box-shadow:-4px 0 20px rgba(0,0,0,.4);
+}
+#sidebar.open{right:0}
+.sidebar-header{
+  padding:18px 20px 14px;
+  background:linear-gradient(135deg,#0d7a3e 0%,#1a6b3c 100%);
+  flex-shrink:0;
+}
+.sidebar-header h1{font-size:16px;font-weight:700;color:#fff;margin-bottom:2px}
+.sidebar-header .sub{font-size:11.5px;color:rgba(255,255,255,.75)}
+#sidebar-close{
+  position:absolute;top:14px;right:14px;background:rgba(255,255,255,.15);
+  border:none;color:#fff;width:28px;height:28px;border-radius:50%;
+  cursor:pointer;font-size:16px;line-height:28px;text-align:center;
+}
+#sidebar-close:hover{background:rgba(255,255,255,.3)}
+.sidebar-body{flex:1;overflow-y:auto;padding:0 0 20px}
+.sidebar-body::-webkit-scrollbar{width:6px}
+.sidebar-body::-webkit-scrollbar-thumb{background:#3a4055;border-radius:3px}
+
+/* ── Cards ─────────────────────────────────────────── */
+.card{margin:12px 14px 0;background:#242938;border-radius:10px;overflow:hidden}
+.card-title{
+  padding:10px 14px;font-size:12.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:#8a94a8;
+  border-bottom:1px solid #2e3446;
+  display:flex;align-items:center;gap:8px;
+}
+.card-title .icon{font-size:15px}
+.card-body{padding:12px 14px}
+
+/* ── Location ──────────────────────────────────────── */
+.loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+.loc-item label{font-size:10.5px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+.loc-item .val{font-size:13.5px;font-weight:600;color:#f0f0f0;margin-top:1px}
+
+/* ── Soil Classification ───────────────────────────── */
+.soil-class{display:flex;flex-direction:column;gap:6px}
+.soil-class-item{display:flex;justify-content:space-between;align-items:center}
+.soil-class-item .lbl{font-size:11.5px;color:#8a94a8}
+.soil-class-item .val{font-size:12.5px;font-weight:600;color:#a5d6a7;text-align:right;max-width:65%}
+
+/* ── Soil Layers ───────────────────────────────────── */
+.layer-tabs{display:flex;gap:4px;padding:10px 14px 0;flex-wrap:wrap}
+.layer-tab{
+  padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
+  background:#2e3446;color:#8a94a8;cursor:pointer;border:none;
+  transition:all .15s;
+}
+.layer-tab.active{background:#0d7a3e;color:#fff}
+.layer-tab:hover:not(.active){background:#3a4055}
+.params-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:8px}
+.param{
+  padding:8px 10px;background:#1e2333;
+  display:flex;flex-direction:column;gap:2px;
+}
+.param:nth-child(odd){border-radius:4px 0 0 4px}
+.param:nth-child(even){border-radius:0 4px 4px 0}
+.param .p-label{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
+.param .p-val{font-size:13px;font-weight:600;color:#e8e8e8}
+.param .p-unit{font-size:10px;color:#6b7280;margin-left:3px;font-weight:400}
+.param .p-bar{height:3px;border-radius:2px;background:#2e3446;margin-top:3px}
+.param .p-bar-fill{height:100%;border-radius:2px;transition:width .3s}
+
+/* ── Precipitation Chart ───────────────────────────── */
+#precip-chart-wrap{height:140px;padding:4px 0}
+
+/* ── Climate Outlook ───────────────────────────────── */
+.climate-var-tabs{
+  display:flex;gap:0;border-bottom:2px solid #2e3446;margin-bottom:8px;
+}
+.climate-var-tab{
+  flex:1;padding:7px 4px;text-align:center;font-size:10.5px;font-weight:600;
+  color:#6b7280;cursor:pointer;transition:all .2s;
+  border-bottom:2px solid transparent;margin-bottom:-2px;
+  letter-spacing:.2px;
+}
+.climate-var-tab:hover{color:#b0bec5}
+.climate-var-tab.active{color:#42a5f5;border-bottom-color:#42a5f5}
+.climate-var-panel{display:none}
+.climate-var-panel.active{display:block}
+.climate-chart-wrap{height:160px;padding:4px 0}
+.outlook-row{
+  display:flex;align-items:center;gap:6px;padding:5px 0;
+  border-bottom:1px solid #2e3446;font-size:12px;
+}
+.outlook-row:last-child{border-bottom:none}
+.outlook-month{width:36px;font-weight:600;color:#8a94a8;flex-shrink:0}
+.outlook-bar-wrap{flex:1;display:flex;flex-direction:column;gap:2px}
+.outlook-bar{height:6px;border-radius:3px;background:#2e3446;position:relative;overflow:visible}
+.outlook-bar-normal{height:100%;border-radius:3px;background:#42a5f5;position:absolute;top:0;left:0}
+.outlook-bar-forecast{height:100%;border-radius:3px;position:absolute;top:0;left:0}
+.outlook-vals{display:flex;justify-content:space-between;font-size:9.5px;color:#6b7280}
+.outlook-badge{
+  padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;
+  flex-shrink:0;min-width:60px;text-align:center;
+}
+.badge-above{background:rgba(33,150,243,.2);color:#42a5f5}
+.badge-below{background:rgba(255,152,0,.2);color:#ffa726}
+.badge-normal{background:rgba(76,175,80,.15);color:#66bb6a}
+.badge-much-above{background:rgba(244,67,54,.2);color:#ef5350}
+.badge-much-below{background:rgba(244,67,54,.2);color:#ef5350}
+
+.climate-recs{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.climate-rec{
+  padding:8px 10px;background:#1e2333;border-radius:6px;
+  border-left:3px solid #42a5f5;font-size:11.5px;color:#9ca3af;line-height:1.5;
+}
+.climate-rec.wet{border-left-color:#1565c0}
+.climate-rec.dry{border-left-color:#ff9800}
+.climate-rec.heat{border-left-color:#ef5350}
+.climate-rec strong{color:#e0e0e0}
+
+/* ── Fertility ─────────────────────────────────────── */
+.fertility-score{
+  display:flex;align-items:center;gap:14px;padding:4px 0 8px;
+}
+.score-circle{
+  width:56px;height:56px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;flex-shrink:0;
+  font-size:20px;font-weight:800;color:#fff;
+}
+.score-detail .score-label{font-size:15px;font-weight:700;color:#f0f0f0}
+.score-detail .score-desc{font-size:11.5px;color:#8a94a8;margin-top:2px}
+
+.rating-bars{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.rating-row{display:flex;align-items:center;gap:8px}
+.rating-row .r-label{width:100px;font-size:11px;color:#8a94a8;flex-shrink:0}
+.rating-row .r-bar{flex:1;height:8px;background:#2e3446;border-radius:4px;overflow:hidden}
+.rating-row .r-fill{height:100%;border-radius:4px;transition:width .4s}
+.rating-row .r-val{width:50px;font-size:11px;font-weight:600;text-align:right;color:#e0e0e0}
+
+/* ── Recommendations ───────────────────────────────── */
+.rec-list{display:flex;flex-direction:column;gap:8px}
+.rec-item{
+  padding:10px 12px;background:#1e2333;border-radius:8px;
+  border-left:3px solid #0d7a3e;
+}
+.rec-item.high{border-left-color:#ef5350}
+.rec-item.medium{border-left-color:#ffa726}
+.rec-item.low{border-left-color:#66bb6a}
+.rec-cat{font-size:10px;color:#ffa726;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.rec-title{font-size:13px;font-weight:600;color:#f0f0f0;margin-top:2px}
+.rec-detail{font-size:11.5px;color:#9ca3af;margin-top:4px;line-height:1.5}
+.rec-products{margin-top:5px;display:flex;flex-wrap:wrap;gap:4px}
+.rec-chip{
+  padding:2px 8px;background:#2e3446;border-radius:12px;
+  font-size:10px;color:#a5d6a7;font-weight:500;
+}
+
+/* ── Data Sources / Citations ─────────────────────── */
+.citations{display:flex;flex-direction:column;gap:8px}
+.cite-item{
+  padding:8px 10px;background:#1e2333;border-radius:6px;
+  border-left:3px solid #5c6bc0;font-size:11px;color:#9ca3af;line-height:1.55;
+}
+.cite-item .cite-title{font-size:12px;font-weight:600;color:#b0bec5;margin-bottom:2px}
+.cite-item a{color:#64b5f6;text-decoration:none}
+.cite-item a:hover{text-decoration:underline;color:#90caf9}
+.cite-item .cite-org{color:#78909c;font-style:italic}
+
+/* ── Coordinate Search Box ─────────────────────────── */
+#coord-search{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:600;
+  display:flex;gap:0;background:rgba(26,31,46,.92);border-radius:10px;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);backdrop-filter:blur(8px);
+  border:1px solid #2e3446;overflow:hidden;
+}
+#coord-input{
+  width:260px;padding:9px 14px;border:none;outline:none;
+  background:transparent;color:#e8e8e8;font-size:13px;
+  font-family:inherit;
+}
+#coord-input::placeholder{color:#6b7280}
+#coord-btn{
+  padding:9px 16px;border:none;background:#0d7a3e;color:#fff;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .2s;
+  white-space:nowrap;
+}
+#coord-btn:hover{background:#0a5e30}
+#coord-error{
+  position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  margin-top:6px;padding:4px 12px;border-radius:6px;font-size:11px;
+  background:rgba(239,83,80,.9);color:#fff;white-space:nowrap;
+  pointer-events:none;opacity:0;transition:opacity .3s;
+}
+#coord-error.show{opacity:1}
+/* ── Welcome overlay ───────────────────────────────── */
+#welcome{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(26,31,46,.94);padding:28px 36px;border-radius:14px;
+  z-index:500;text-align:center;pointer-events:none;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);backdrop-filter:blur(6px);
+}
+#welcome h2{color:#fff;font-size:20px;margin-bottom:6px}
+#welcome p{color:#9ca3af;font-size:13px;line-height:1.5}
+#welcome.hidden{display:none}
+
+/* ── Loading overlay ──────────────────────────────── */
+#loading{
+  position:absolute;inset:0;z-index:2000;background:#1a1f2e;
+  display:flex;align-items:center;justify-content:center;
+}
+#loading.hidden{display:none}
+.loading-box{width:min(420px,88vw);text-align:center}
+.loading-box h1{
+  font-size:22px;font-weight:800;
+  background:linear-gradient(135deg,#0d7a3e,#42a5f5);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.loading-box p{color:#8a94a8;font-size:12.5px;margin-top:6px}
+.up-bar-wrap{height:6px;background:#2e3446;border-radius:3px;overflow:hidden;margin-top:14px}
+.up-bar{height:100%;width:0;background:linear-gradient(90deg,#0d7a3e,#42a5f5);border-radius:3px;transition:width .3s}
+
+/* ── Plain basemap ────────────────────────────────── */
+#map.plain{background:#cfdde6}
+#map.sat{background:#0b1a2a}
+.leaflet-tooltip.prov-tooltip{font-size:11.5px;font-weight:600}
+
+#back-link{
+  position:absolute;left:12px;bottom:24px;z-index:600;
+  background:rgba(26,31,46,.92);color:#e0e0e0;text-decoration:none;
+  font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;
+  border:1px solid #2e3446;box-shadow:0 4px 14px rgba(0,0,0,.35);
+}
+#back-link:hover{background:#0d7a3e}
+
+@media (max-width:760px){
+  #sidebar{width:100%;right:-100%}
+  #coord-search{top:auto;bottom:24px;left:12px;right:12px;transform:none}
+  #coord-input{width:auto;flex:1;min-width:0}
+  #back-link{top:12px;bottom:auto;left:auto;right:12px}
+  #welcome{width:calc(100vw - 32px);padding:20px}
+  .leaflet-top.leaflet-left{top:0}
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loading-box">
+    <h1>Agronomic Intelligence</h1>
+    <p id="up-text">Loading soil data...</p>
+    <div class="up-bar-wrap"><div class="up-bar" id="up-bar"></div></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="coord-search">
+  <input id="coord-input" type="text" placeholder="Paste coordinates: -7.5, 112.7" autocomplete="off">
+  <button id="coord-btn">Search</button>
+  <div id="coord-error"></div>
+</div>
+
+<div id="welcome">
+  <h2>Agronomic Intelligence Platform</h2>
+  <p>Click anywhere in Indonesia, or paste coordinates in the search box,<br>to see soil, climate, and recommendations</p>
+</div>
+
+<div id="sidebar">
+  <div class="sidebar-header">
+    <h1>Agronomic Intelligence Platform</h1>
+    <div class="sub" id="loc-summary">-</div>
+    <button id="sidebar-close">&times;</button>
+  </div>
+  <div class="sidebar-body">
+
+    <!-- Location -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#127759;</span> Location</div>
+      <div class="card-body">
+        <div class="loc-grid" id="loc-grid"></div>
+      </div>
+    </div>
+
+    <!-- Soil Classification -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#129704;</span> Soil classification</div>
+      <div class="card-body">
+        <div class="soil-class" id="soil-class"></div>
+      </div>
+    </div>
+
+    <!-- Soil Layers -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#128208;</span> Soil parameters by layer</div>
+      <div class="layer-tabs" id="layer-tabs"></div>
+      <div class="card-body" id="layer-params"></div>
+    </div>
+
+    <!-- Precipitation -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#127783;</span> Monthly rainfall (1991&ndash;2020 normal)</div>
+      <div class="card-body">
+        <div id="precip-chart-wrap">
+          <canvas id="precip-chart"></canvas>
+        </div>
+        <div class="loc-grid" id="precip-summary" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- Climate Outlook 6 months -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#9729;</span> 6-month climate outlook (ECMWF SEAS5)</div>
+      <div class="climate-var-tabs" id="climate-var-tabs">
+        <div class="climate-var-tab active" data-var="precip">Precipitation</div>
+        <div class="climate-var-tab" data-var="temp">Temperature</div>
+        <div class="climate-var-tab" data-var="rh">RH</div>
+        <div class="climate-var-tab" data-var="vpd">VPD</div>
+      </div>
+      <div class="card-body">
+        <div class="climate-var-panel active" id="panel-precip">
+          <div class="climate-chart-wrap"><canvas id="chart-precip"></canvas></div>
+          <div id="detail-precip"></div>
+        </div>
+        <div class="climate-var-panel" id="panel-temp">
+          <div class="climate-chart-wrap"><canvas id="chart-temp"></canvas></div>
+          <div id="detail-temp"></div>
+        </div>
+        <div class="climate-var-panel" id="panel-rh">
+          <div class="climate-chart-wrap"><canvas id="chart-rh"></canvas></div>
+          <div id="detail-rh"></div>
+        </div>
+        <div class="climate-var-panel" id="panel-vpd">
+          <div class="climate-chart-wrap"><canvas id="chart-vpd"></canvas></div>
+          <div id="detail-vpd"></div>
+        </div>
+        <div class="climate-recs" id="climate-recs"></div>
+      </div>
+    </div>
+
+    <!-- Fertility Assessment -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#127793;</span> Fertility assessment</div>
+      <div class="card-body">
+        <div class="fertility-score" id="fertility-score"></div>
+        <div class="rating-bars" id="rating-bars"></div>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#128161;</span> Recommendations</div>
+      <div class="card-body">
+        <div class="rec-list" id="rec-list"></div>
+      </div>
+    </div>
+
+
+    <!-- Data Sources / Citations -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title"><span class="icon">&#128218;</span> Data sources and citations</div>
+      <div class="card-body">
+        <div class="citations">
+          <div class="cite-item">
+            <div class="cite-title">HWSD v2.0 &mdash; Harmonized World Soil Database</div>
+            <span class="cite-org">FAO &amp; IIASA</span><br>
+            FAO &amp; IIASA (2023). <em>Harmonized World Soil Database version 2.0.</em> Rome and Laxenburg. <a href="https://doi.org/10.4060/cc3823en" target="_blank" rel="noopener">https://doi.org/10.4060/cc3823en</a>. Licensed under CC BY-NC-SA 3.0 IGO; the Indonesian subset used here is shared under the same terms for non-commercial use.
+          </div>
+          <div class="cite-item">
+            <div class="cite-title">Historical climate &mdash; ERA5 reanalysis</div>
+            <span class="cite-org">Copernicus Climate Change Service via Open-Meteo</span><br>
+            Monthly rainfall, temperature, and humidity normals for 1991&ndash;2020 are computed in the browser from the Open-Meteo Historical Weather API (ERA5 and ERA5-Land, CC BY 4.0).<br>
+            <a href="https://open-meteo.com/en/docs/historical-weather-api" target="_blank" rel="noopener">https://open-meteo.com/en/docs/historical-weather-api</a>
+          </div>
+          <div class="cite-item">
+            <div class="cite-title">ECMWF SEAS5 &mdash; Seasonal climate forecast</div>
+            <span class="cite-org">ECMWF via Open-Meteo</span><br>
+            ECMWF SEAS5 seasonal forecast system, ensemble mean, accessed through the Open-Meteo Seasonal Forecast API (CC BY 4.0).<br>
+            <a href="https://open-meteo.com/en/docs/seasonal-forecast-api" target="_blank" rel="noopener">https://open-meteo.com/en/docs/seasonal-forecast-api</a>
+          </div>
+          <div class="cite-item">
+            <div class="cite-title">Sentinel-2 cloudless 2016 &mdash; Satellite basemap</div>
+            <span class="cite-org">EOX IT Services GmbH</span><br>
+            Sentinel-2 cloudless (<a href="https://s2maps.eu" target="_blank" rel="noopener">https://s2maps.eu</a>) by EOX IT Services GmbH, contains modified Copernicus Sentinel data 2016. Licensed under CC BY 4.0.
+          </div>
+          <div class="cite-item">
+            <div class="cite-title">Natural Earth &mdash; Boundaries</div>
+            <span class="cite-org">Natural Earth</span><br>
+            Province and country outlines made with Natural Earth (public domain), simplified for the web.<br>
+            <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">https://www.naturalearthdata.com/</a>
+          </div>
+          <div class="cite-item">
+            <div class="cite-title">WRB &mdash; Soil classification</div>
+            <span class="cite-org">IUSS Working Group WRB (2022)</span><br>
+            IUSS Working Group WRB (2022). <em>World Reference Base for Soil Resources.</em> 4th edition. International Union of Soil Sciences, Vienna.<br>
+            <a href="https://www.isric.org/explore/wrb" target="_blank" rel="noopener">https://www.isric.org/explore/wrb</a>
+          </div>
+        </div>
+        <p style="font-size:10.5px;color:#6b7280;margin-top:10px;line-height:1.5">This is a screening tool built on coarse global datasets. It does not replace a field survey or a laboratory soil test.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<a id="back-link" href="https://alfasisurya.github.io/portfolio/projects/agronomic-intelligence/">&larr; Portfolio</a>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.11.0/dist/sql-wasm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+/* ================================================================
+   Agronomic Intelligence (basic web version)
+   Client-side only: Leaflet + GeoTIFF.js + sql.js + Chart.js.
+   Soil data is read from ./data; climate comes from Open-Meteo.
+   ================================================================ */
+
+// ── Global state ──────────────────────────────────────────────────
+let map, marker, db;
+let hwsd2Image;
+let hwsd2BBox, hwsd2W, hwsd2H;
+let provincesLayer, provincesGeoJSON;
+let precipChart = null;
+let climateCharts = { precip: null, temp: null, rh: null, vpd: null };
+let lookups = {};
+let activeLayerIdx = 0;
+let currentLayers = [];
+let clickSeq = 0;
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DATA_DIR = 'data/';
+
+async function fetchData(name, kind) {
+  const resp = await fetch(DATA_DIR + name);
+  if (!resp.ok) throw new Error(`${name}: HTTP ${resp.status}`);
+  return kind === 'json' ? resp.json() : resp.arrayBuffer();
+}
+
+// ── Initialization ────────────────────────────────────────────────
+async function initApp() {
+  const bar = document.getElementById('up-bar');
+  const text = document.getElementById('up-text');
+  try {
+    text.textContent = 'Preparing the map...';
+    bar.style.width = '10%';
+    await initMap();
+
+    text.textContent = 'Loading the soil database...';
+    bar.style.width = '40%';
+    await loadDatabase();
+
+    text.textContent = 'Loading the soil map...';
+    bar.style.width = '75%';
+    await loadHWSD2();
+
+    bar.style.width = '100%';
+    text.textContent = 'Ready';
+    setTimeout(() => document.getElementById('loading').classList.add('hidden'), 300);
+  } catch (e) {
+    text.textContent = 'Could not load the data: ' + e.message;
+    bar.style.width = '100%';
+    bar.style.background = '#ef5350';
+    console.error(e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initApp);
+
+// ── Map ───────────────────────────────────────────────────────────
+async function initMap() {
+  const mapEl = document.getElementById('map');
+  map = L.map('map', {
+    center: [-2.5, 118],
+    zoom: 5,
+    minZoom: 4,
+    zoomControl: true,
+    maxBounds: [[-15, 90], [10, 145]],
+  });
+
+  const satellite = L.tileLayer(
+    'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg',
+    {
+      attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016), CC BY 4.0',
+      maxNativeZoom: 15,
+      maxZoom: 18,
+    },
+  );
+
+  const [neighbours, provinces] = await Promise.all([
+    fetchData('neighbours.geojson', 'json'),
+    fetchData('provinces.geojson', 'json'),
+  ]);
+  provincesGeoJSON = provinces;
+
+  const plain = L.layerGroup([
+    L.geoJSON(neighbours, {
+      style: { color: '#b9b4a8', weight: 0.6, fillColor: '#ebe7de', fillOpacity: 1 },
+      interactive: false,
+    }),
+    L.geoJSON(provinces, {
+      style: { color: '#c9c3b4', weight: 0.5, fillColor: '#f7f4ec', fillOpacity: 1 },
+      interactive: false,
+    }),
+  ]);
+  plain.options = { attribution: 'Boundaries: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>' };
+
+  provincesLayer = L.geoJSON(provinces, {
+    style: { color: '#0d7a3e', weight: 1.2, fillColor: 'transparent', fillOpacity: 0, opacity: 0.8 },
+    onEachFeature: (f, layer) => {
+      layer.bindTooltip(f.properties.NAME_1, { sticky: true, className: 'prov-tooltip' });
+    },
+  });
+
+  satellite.addTo(map);
+  provincesLayer.addTo(map);
+  mapEl.classList.add('sat');
+
+  L.control.layers(
+    { 'Satellite (Sentinel-2 cloudless)': satellite, 'Plain map': plain },
+    { 'Province outlines': provincesLayer },
+    { position: 'topleft', collapsed: true },
+  ).addTo(map);
+
+  map.on('baselayerchange', e => {
+    const isPlain = e.layer === plain;
+    mapEl.classList.toggle('plain', isPlain);
+    mapEl.classList.toggle('sat', !isPlain);
+    provincesLayer.setStyle({ color: isPlain ? '#6b8f71' : '#0d7a3e' });
+    if (map.hasLayer(provincesLayer)) provincesLayer.bringToFront();
+  });
+
+  map.on('click', onMapClick);
+
+  document.getElementById('sidebar-close').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+  });
+
+  initCoordSearch();
+  initClimateVarTabs();
+}
+
+// ── Coordinate Search ─────────────────────────────────────────────
+function initCoordSearch() {
+  const input = document.getElementById('coord-input');
+  const btn = document.getElementById('coord-btn');
+  const errEl = document.getElementById('coord-error');
+  let errTimer = null;
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.classList.add('show');
+    clearTimeout(errTimer);
+    errTimer = setTimeout(() => errEl.classList.remove('show'), 3000);
+  }
+
+  function parseAndGo() {
+    const raw = input.value.trim();
+    if (!raw) { showError('Enter coordinates, for example: -7.5, 112.7'); return; }
+
+    const parts = raw
+      .replace(/[°'"NSEW]/gi, '')
+      .replace(/\s+/g, ' ')
+      .split(/[,;\s]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    if (parts.length < 2) { showError('Format: latitude, longitude (example: -7.5, 112.7)'); return; }
+
+    const lat = parseFloat(parts[0]);
+    const lon = parseFloat(parts[1]);
+
+    if (isNaN(lat) || isNaN(lon)) { showError('Coordinates are not valid'); return; }
+    if (lat < -90 || lat > 90) { showError('Latitude must be between -90 and 90'); return; }
+    if (lon < -180 || lon > 180) { showError('Longitude must be between -180 and 180'); return; }
+
+    errEl.classList.remove('show');
+    map.setView([lat, lon], Math.max(map.getZoom(), 10));
+    onMapClick({ latlng: { lat, lng: lon } });
+    input.blur();
+  }
+
+  btn.addEventListener('click', parseAndGo);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') parseAndGo(); });
+
+  input.addEventListener('paste', () => {
+    setTimeout(parseAndGo, 50);
+  });
+}
+
+
+// ── Load SQLite via sql.js ────────────────────────────────────────
+async function loadDatabase() {
+  const [SQL, buf] = await Promise.all([
+    initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.11.0/dist/${f}` }),
+    fetchData('hwsd2_idn.sqlite'),
+  ]);
+  db = new SQL.Database(new Uint8Array(buf));
+  loadLookupTables();
+}
+
+function loadLookupTables() {
+  const tables = [
+    'D_DRAINAGE','D_TEXTURE_USDA','D_TEXTURE_SOTER','D_AWC','D_FAO90',
+    'D_WRB2','D_WRB2code','D_WRB4','D_ROOT_DEPTH','D_PHASE','D_ROOTS',
+    'D_IL','D_SWR','D_ADD_PROP','D_COVERAGE','D_KOPPEN','D_WRB_PHASES',
+  ];
+  for (const t of tables) {
+    lookups[t] = {};
+    try {
+      const res = db.exec(`SELECT * FROM "${t}"`);
+      if (!res.length) continue;
+      const cols = res[0].columns.map(c => c.toUpperCase());
+      const ci = cols.indexOf('CODE') !== -1 ? cols.indexOf('CODE') : 0;
+      let vi = cols.indexOf('VALUE');
+      if (vi === -1) vi = cols.length - 1;
+      for (const row of res[0].values) {
+        lookups[t][String(row[ci])] = String(row[vi]);
+      }
+    } catch (_) {}
+  }
+}
+
+function lk(table, code) {
+  if (code === null || code === undefined || code === '') return '-';
+  return lookups[table]?.[String(code)] || String(code);
+}
+
+// ── Load HWSD2 GeoTIFF ────────────────────────────────────────────
+async function loadHWSD2() {
+  const buf = await fetchData('hwsd2_idn.tif');
+  const tiff = await GeoTIFF.fromArrayBuffer(buf);
+  hwsd2Image = await tiff.getImage();
+  hwsd2BBox = hwsd2Image.getBoundingBox();
+  hwsd2W = hwsd2Image.getWidth();
+  hwsd2H = hwsd2Image.getHeight();
+}
+
+// ── Read raster pixel ─────────────────────────────────────────────
+async function readHWSD2(lat, lon) {
+  const px = Math.floor((lon - hwsd2BBox[0]) / (hwsd2BBox[2] - hwsd2BBox[0]) * hwsd2W);
+  const py = Math.floor((hwsd2BBox[3] - lat) / (hwsd2BBox[3] - hwsd2BBox[1]) * hwsd2H);
+  if (px < 0 || px >= hwsd2W || py < 0 || py >= hwsd2H) return 0;
+  const data = await hwsd2Image.readRasters({ window: [px, py, px+1, py+1] });
+  return data[0][0];
+}
+
+// ── Find province ─────────────────────────────────────────────────
+function findProvince(lat, lon) {
+  if (!provincesGeoJSON) return null;
+  const pt = [lon, lat];
+  for (const f of provincesGeoJSON.features) {
+    if (pointInFeature(pt, f)) return f.properties;
+  }
+  return null;
+}
+
+function pointInFeature(pt, feature) {
+  const geom = feature.geometry;
+  if (geom.type === 'Polygon') return pointInPolygon(pt, geom.coordinates);
+  if (geom.type === 'MultiPolygon') {
+    return geom.coordinates.some(poly => pointInPolygon(pt, poly));
+  }
+  return false;
+}
+
+function pointInPolygon(pt, rings) {
+  const [x, y] = pt;
+  const ring = rings[0];
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// ── Map click handler ─────────────────────────────────────────────
+async function onMapClick(e) {
+  const { lat, lng: lon } = e.latlng;
+  const seq = ++clickSeq;
+
+  document.getElementById('welcome').classList.add('hidden');
+
+  if (marker) map.removeLayer(marker);
+  marker = L.circleMarker([lat, lon], {
+    radius: 7, color: '#fff', weight: 2, fillColor: '#0d7a3e',
+    fillOpacity: 1,
+  }).addTo(map);
+
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.add('open');
+  document.getElementById('loc-summary').textContent = 'Fetching data...';
+
+  try {
+    const smuId = await readHWSD2(lat, lon);
+    if (!smuId || smuId === 0) {
+      document.getElementById('loc-summary').textContent = 'No soil data at this location (sea or water)';
+      clearCards();
+      return;
+    }
+
+    const prov = findProvince(lat, lon);
+
+    const layersRes = db.exec(
+      `SELECT * FROM HWSD2_LAYERS WHERE HWSD2_SMU_ID = ${smuId} ORDER BY SEQUENCE, LAYER`
+    );
+    const smuRes = db.exec(`SELECT * FROM HWSD2_SMU WHERE HWSD2_SMU_ID = ${smuId}`);
+
+    if (!layersRes.length || !layersRes[0].values.length) {
+      document.getElementById('loc-summary').textContent = `SMU ID ${smuId} - data not found`;
+      clearCards();
+      return;
+    }
+
+    const layerCols = layersRes[0].columns;
+    const allRows = layersRes[0].values.map(r => {
+      const obj = {};
+      layerCols.forEach((c, i) => obj[c] = r[i]);
+      return obj;
+    });
+
+    let smuData = null;
+    if (smuRes.length && smuRes[0].values.length) {
+      const sc = smuRes[0].columns;
+      smuData = {};
+      sc.forEach((c, i) => smuData[c] = smuRes[0].values[0][i]);
+    }
+
+    currentLayers = allRows;
+    renderLocation(lat, lon, prov, smuId, smuData);
+    renderAllComponents(allRows);
+    renderFertility(allRows, null, allRows);
+
+    const provName = prov ? prov.NAME_1 : 'Indonesia';
+    document.getElementById('loc-summary').textContent =
+      `${provName} | SMU ${smuId} | ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+    fetchAndRenderClimate(lat, lon, allRows, seq);
+
+  } catch (err) {
+    document.getElementById('loc-summary').textContent = 'Error: ' + err.message;
+    console.error(err);
+  }
+}
+
+function clearCards() {
+  ['loc-grid','soil-class','layer-tabs','layer-params',
+   'precip-summary','detail-precip','detail-temp','detail-rh','detail-vpd','climate-recs',
+   'fertility-score','rating-bars','rec-list'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+  for (const k of Object.keys(climateCharts)) {
+    if (climateCharts[k]) { climateCharts[k].destroy(); climateCharts[k] = null; }
+  }
+}
+
+// ── Render: Location ──────────────────────────────────────────────
+function renderLocation(lat, lon, prov, smuId, smu) {
+  const el = document.getElementById('loc-grid');
+  const items = [
+    ['Latitude', lat.toFixed(5) + '\u00B0'],
+    ['Longitude', lon.toFixed(5) + '\u00B0'],
+    ['Province', prov ? prov.NAME_1 : '-'],
+    ['HWSD2 SMU ID', smuId],
+  ];
+  if (smu) {
+    items.push(['Climate (Koppen)', lk('D_KOPPEN', smu.KOPPEN)]);
+    items.push(['Coverage', lk('D_COVERAGE', smu.COVERAGE)]);
+  }
+  el.innerHTML = items.map(([l, v]) =>
+    `<div class="loc-item"><label>${l}</label><div class="val">${v}</div></div>`
+  ).join('');
+}
+
+// ── Render: All components (sequences) ────────────────────────────
+function renderAllComponents(allRows) {
+  const sequences = [...new Set(allRows.map(r => r.SEQUENCE))].sort((a, b) => a - b);
+
+  const classEl = document.getElementById('soil-class');
+  classEl.innerHTML = sequences.map(seq => {
+    const seqRows = allRows.filter(r => r.SEQUENCE === seq);
+    const row = seqRows[0];
+    const share = row.SHARE || '?';
+    const wrb2Name = lk('D_WRB2', row.WRB2);
+    return `<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #2e3446">
+      <div style="font-size:12px;font-weight:700;color:#a5d6a7;margin-bottom:5px">
+        Component ${seq} &mdash; ${share}% &mdash; ${wrb2Name}
+      </div>
+      ${[
+        ['WRB 2022 (full)', lk('D_WRB_PHASES', row.WRB_PHASES)],
+        ['WRB 4-digit', lk('D_WRB4', row.WRB4)],
+        ['FAO 1990', lk('D_FAO90', row.FAO90)],
+        ['Drainage', lk('D_DRAINAGE', row.DRAINAGE)],
+        ['Rooting depth', lk('D_ROOT_DEPTH', row.ROOT_DEPTH)],
+        ['AWC', lk('D_AWC', row.AWC)],
+      ].map(([l, v]) =>
+        `<div class="soil-class-item"><span class="lbl">${l}</span><span class="val">${v}</span></div>`
+      ).join('')}
+    </div>`;
+  }).join('');
+
+  const tabsEl = document.getElementById('layer-tabs');
+  const buttons = [];
+  let first = true;
+  for (const seq of sequences) {
+    const seqRows = allRows.filter(r => r.SEQUENCE === seq);
+    const wrb2 = lk('D_WRB2', seqRows[0].WRB2);
+    const share = seqRows[0].SHARE || '?';
+    const layers = [...new Set(seqRows.map(r => r.LAYER))].sort();
+    for (const l of layers) {
+      const depth = getLayerDepth(seqRows, l);
+      const label = sequences.length > 1
+        ? `C${seq} ${l} (${depth})`
+        : `${l} (${depth})`;
+      buttons.push({ seq, layer: l, label, active: first });
+      first = false;
+    }
+  }
+
+  tabsEl.innerHTML = buttons.map(b =>
+    `<button class="layer-tab${b.active ? ' active' : ''}" data-seq="${b.seq}" data-layer="${b.layer}">
+      ${b.label}
+    </button>`
+  ).join('');
+
+  tabsEl.querySelectorAll('.layer-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabsEl.querySelectorAll('.layer-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const seq = parseInt(btn.dataset.seq);
+      const layer = btn.dataset.layer;
+      const row = allRows.find(r => r.SEQUENCE === seq && r.LAYER === layer);
+      renderLayerParams(row);
+    });
+  });
+
+  if (buttons.length > 0) {
+    const b = buttons[0];
+    const row = allRows.find(r => r.SEQUENCE === b.seq && r.LAYER === b.layer);
+    renderLayerParams(row);
+  }
+}
+
+function getLayerDepth(rows, layer) {
+  const r = rows.find(x => x.LAYER === layer);
+  if (!r) return '';
+  return `${r.TOPDEP}-${r.BOTDEP} cm`;
+}
+
+function renderLayerParams(row) {
+  if (!row) return;
+  const el = document.getElementById('layer-params');
+
+  const params = [
+    { label: 'Sand', val: row.SAND, unit: '%', max: 100, color: '#f4a460' },
+    { label: 'Silt', val: row.SILT, unit: '%', max: 100, color: '#d2b48c' },
+    { label: 'Clay', val: row.CLAY, unit: '%', max: 100, color: '#8b7355' },
+    { label: 'Coarse fragments', val: row.COARSE, unit: '% vol', max: 80, color: '#9e9e9e' },
+    { label: 'USDA texture', val: lk('D_TEXTURE_USDA', row.TEXTURE_USDA), unit: '', max: 0 },
+    { label: 'SOTER texture', val: lk('D_TEXTURE_SOTER', row.TEXTURE_SOTER), unit: '', max: 0 },
+    { label: 'Bulk Density', val: fv(row.BULK), unit: 'g/cm\u00B3', max: 2.0, color: '#78909c' },
+    { label: 'Ref Bulk Dens.', val: fv(row.REF_BULK), unit: 'g/cm\u00B3', max: 2.0, color: '#78909c' },
+    { label: 'Organic C', val: fv(row.ORG_CARBON), unit: '%', max: 8, color: '#4caf50' },
+    { label: 'pH (H\u2082O)', val: fv(row.PH_WATER), unit: '', max: 14, color: phColor(row.PH_WATER) },
+    { label: 'Total N', val: fv(row.TOTAL_N), unit: 'g/kg', max: 10, color: '#2196f3' },
+    { label: 'C/N ratio', val: fv(row.CN_RATIO), unit: '', max: 30, color: '#9c27b0' },
+    { label: 'Soil CEC', val: row.CEC_SOIL, unit: 'cmolc/kg', max: 60, color: '#ff9800' },
+    { label: 'Clay CEC', val: row.CEC_CLAY, unit: 'cmolc/kg', max: 100, color: '#ff9800' },
+    { label: 'ECEC', val: fv(row.CEC_EFF), unit: 'cmolc/kg', max: 50, color: '#ff9800' },
+    { label: 'TEB', val: fv(row.TEB), unit: 'cmolc/kg', max: 50, color: '#8bc34a' },
+    { label: 'Base saturation', val: row.BSAT, unit: '%', max: 100, color: '#00bcd4' },
+    { label: 'Al saturation', val: row.ALUM_SAT, unit: '%', max: 100, color: '#f44336' },
+    { label: 'ESP', val: row.ESP, unit: '%', max: 50, color: '#e91e63' },
+    { label: 'CaCO\u2083', val: fv(row.TCARBON_EQ), unit: '%', max: 50, color: '#607d8b' },
+    { label: 'Gypsum', val: fv(row.GYPSUM), unit: '%', max: 20, color: '#795548' },
+    { label: 'Electrical conductivity', val: row.ELEC_COND, unit: 'dS/m', max: 16, color: '#ffc107' },
+  ];
+
+  el.innerHTML = '<div class="params-grid">' + params.map(p => {
+    const v = (p.val !== null && p.val !== undefined && p.val !== '') ? p.val : '-';
+    const numVal = parseFloat(v);
+    const hasBar = p.max > 0 && !isNaN(numVal);
+    const pct = hasBar ? Math.min(100, (numVal / p.max) * 100) : 0;
+    return `<div class="param">
+      <span class="p-label">${p.label}</span>
+      <span class="p-val">${v}<span class="p-unit">${p.unit}</span></span>
+      ${hasBar ? `<div class="p-bar"><div class="p-bar-fill" style="width:${pct}%;background:${p.color||'#4caf50'}"></div></div>` : ''}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function fv(v) {
+  if (v === null || v === undefined) return '-';
+  const n = parseFloat(v);
+  return isNaN(n) ? v : n.toFixed(2);
+}
+
+function phColor(ph) {
+  if (ph === null) return '#9e9e9e';
+  if (ph < 4.5) return '#f44336';
+  if (ph < 5.5) return '#ff9800';
+  if (ph < 6.5) return '#ffc107';
+  if (ph < 7.5) return '#4caf50';
+  if (ph < 8.5) return '#2196f3';
+  return '#9c27b0';
+}
+
+// ── Render: Precipitation ─────────────────────────────────────────
+function renderPrecipitation(precip) {
+  const canvas = document.getElementById('precip-chart');
+  if (precipChart) precipChart.destroy();
+
+  if (!precip || precip.some(v => v <= -9999)) {
+    document.getElementById('precip-summary').innerHTML = '<div class="loc-item"><label>Status</label><div class="val">Data unavailable</div></div>';
+    return;
+  }
+
+  precipChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: MONTHS,
+      datasets: [{
+        data: precip.map(v => Math.round(v)),
+        backgroundColor: precip.map(v =>
+          v > 300 ? '#1565c0' : v > 200 ? '#1e88e5' : v > 100 ? '#42a5f5' : '#90caf9'
+        ),
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.raw + ' mm' } }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { color: '#6b7280', font: { size: 10 } },
+             grid: { color: '#2e3446' },
+             title: { display: true, text: 'mm', color: '#6b7280', font: { size: 10 } }
+        },
+        x: { ticks: { color: '#8a94a8', font: { size: 10 } }, grid: { display: false } },
+      },
+    },
+  });
+
+  const annual = precip.reduce((a, b) => a + b, 0);
+  const maxMonth = MONTHS[precip.indexOf(Math.max(...precip))];
+  const minMonth = MONTHS[precip.indexOf(Math.min(...precip))];
+  document.getElementById('precip-summary').innerHTML = [
+    ['Annual total', Math.round(annual) + ' mm'],
+    ['Wettest month', maxMonth + ' (' + Math.round(Math.max(...precip)) + ' mm)'],
+    ['Driest month', minMonth + ' (' + Math.round(Math.min(...precip)) + ' mm)'],
+  ].map(([l, v]) => `<div class="loc-item"><label>${l}</label><div class="val">${v}</div></div>`).join('');
+}
+
+// ── Fertility Assessment & Recommendations ────────────────────────
+function renderFertility(layers, precip, allRows) {
+  const topsoil = layers.find(r => r.LAYER === 'D1') || layers[0];
+  const recs = [];
+  const ratings = {};
+
+  const ph  = parseFloat(topsoil.PH_WATER);
+  const oc  = parseFloat(topsoil.ORG_CARBON);
+  const nTotal = parseFloat(topsoil.TOTAL_N);
+  const cec = parseFloat(topsoil.CEC_SOIL);
+  const bs  = parseFloat(topsoil.BSAT);
+  const al  = parseFloat(topsoil.ALUM_SAT);
+  const esp = parseFloat(topsoil.ESP);
+  const ec  = parseFloat(topsoil.ELEC_COND);
+  const coarse = parseFloat(topsoil.COARSE);
+  const sand = parseFloat(topsoil.SAND) || 0;
+  const clay = parseFloat(topsoil.CLAY) || 0;
+  const wrb2 = String(topsoil.WRB2 || '').toUpperCase();
+  const rootDepth = parseInt(topsoil.ROOT_DEPTH);
+  const drainage = String(topsoil.DRAINAGE || '').toUpperCase();
+
+  const allSeqs = allRows || layers;
+  const components = [];
+  const seenSeq = new Set();
+  for (const r of allSeqs) {
+    if (!seenSeq.has(r.SEQUENCE)) {
+      seenSeq.add(r.SEQUENCE);
+      components.push({ seq: r.SEQUENCE, share: r.SHARE, wrb2: String(r.WRB2 || '').toUpperCase(), rootDepth: parseInt(r.ROOT_DEPTH) });
+    }
+  }
+
+  // --- pH ---
+  if (!isNaN(ph)) {
+    if (ph < 4.5) {
+      ratings.pH = { score: 15, label: 'Very acidic', color: '#f44336' };
+      recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Intensive liming',
+        detail: `pH ${ph.toFixed(1)} is very acidic. Apply dolomite at 4-6 t/ha or agricultural lime at 3-5 t/ha to raise pH to 5.5-6.5. Split the application into 2 doses per year.`,
+        products: ['Dolomite CaMg(CO3)2','Agricultural lime CaCO3','Rice-husk ash'] });
+    } else if (ph < 5.5) {
+      ratings.pH = { score: 35, label: 'Acidic', color: '#ff9800' };
+      recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Moderate liming',
+        detail: `pH ${ph.toFixed(1)} is acidic. Apply dolomite at 2-3 t/ha to correct pH.`,
+        products: ['Dolomite','Agricultural lime','Dolomitic lime'] });
+    } else if (ph < 6.5) {
+      ratings.pH = { score: 70, label: 'Slightly acidic', color: '#ffc107' };
+      recs.push({ pri: 'low', cat: 'Maintenance', title: 'Maintain pH',
+        detail: `pH ${ph.toFixed(1)} is slightly acidic and close to optimal. Maintain it with organic matter and a light lime rate of 0.5-1 t/ha if needed.`,
+        products: ['Compost','Manure'] });
+    } else if (ph < 7.5) {
+      ratings.pH = { score: 100, label: 'Neutral (optimal)', color: '#4caf50' };
+    } else if (ph < 8.5) {
+      ratings.pH = { score: 60, label: 'Slightly alkaline', color: '#2196f3' };
+      recs.push({ pri: 'medium', cat: 'Soil amendment', title: 'Correct alkalinity',
+        detail: `pH ${ph.toFixed(1)} is slightly alkaline. Add acidic organic matter or elemental sulfur at 0.5-1 t/ha.`,
+        products: ['Elemental sulfur','Acidic compost','AS (ammonium sulfate)'] });
+    } else {
+      ratings.pH = { score: 20, label: 'Alkaline', color: '#9c27b0' };
+      recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Correct high alkalinity',
+        detail: `pH ${ph.toFixed(1)} is strongly alkaline. Gypsum at 2-4 t/ha and elemental sulfur are needed.`,
+        products: ['Gypsum CaSO4','Elemental sulfur','AS'] });
+    }
+  }
+
+  // --- Organic Carbon ---
+  if (!isNaN(oc)) {
+    if (oc < 1) {
+      ratings.COrganik = { score: 15, label: 'Very low', color: '#f44336' };
+      recs.push({ pri: 'high', cat: 'Organic matter', title: 'Intensive organic-matter addition',
+        detail: `Organic C is ${oc.toFixed(2)}%, which is very low. Apply mature compost or manure at 15-20 t/ha. Add a thick organic mulch and green manure (Mucuna, Crotalaria).`,
+        products: ['Compost 15-20 t/ha','Mature manure','Green manure','Straw mulch'] });
+    } else if (oc < 2) {
+      ratings.COrganik = { score: 35, label: 'Low', color: '#ff9800' };
+      recs.push({ pri: 'medium', cat: 'Organic matter', title: 'Add organic matter',
+        detail: `Organic C is ${oc.toFixed(2)}%, which is low. Apply compost at 8-15 t/ha and an organic mulch.`,
+        products: ['Compost 8-15 t/ha','Manure','Crop residue'] });
+    } else if (oc < 3) {
+      ratings.COrganik = { score: 65, label: 'Moderate', color: '#ffc107' };
+      recs.push({ pri: 'low', cat: 'Maintenance', title: 'Maintain organic matter',
+        detail: `Organic C is ${oc.toFixed(2)}%, which is moderate. Maintain it with compost at 5-8 t/ha/year.`,
+        products: ['Compost 5-8 t/ha','Mulch'] });
+    } else if (oc < 5) {
+      ratings.COrganik = { score: 85, label: 'High', color: '#4caf50' };
+    } else {
+      ratings.COrganik = { score: 100, label: 'Very high', color: '#4caf50' };
+    }
+  }
+
+  // --- N Total ---
+  if (!isNaN(nTotal)) {
+    if (nTotal < 1) {
+      ratings.NTotal = { score: 15, label: 'Very low', color: '#f44336' };
+      recs.push({ pri: 'high', cat: 'Fertilizer', title: 'High nitrogen fertilization',
+        detail: `Total N is ${nTotal.toFixed(2)} g/kg, which is very low. Apply urea at 200-300 kg/ha, or NPK plus organic fertilizer. Consider a legume as a biological N source.`,
+        products: ['Urea 200-300 kg/ha','NPK 15-15-15','Rhizobium','Legume green manure'] });
+    } else if (nTotal < 2) {
+      ratings.NTotal = { score: 35, label: 'Low', color: '#ff9800' };
+      recs.push({ pri: 'medium', cat: 'Fertilizer', title: 'Nitrogen fertilization',
+        detail: `Total N is ${nTotal.toFixed(2)} g/kg, which is low. Apply urea at 100-200 kg/ha or an equivalent rate.`,
+        products: ['Urea 100-200 kg/ha','AS','NPK'] });
+    } else if (nTotal < 5) {
+      ratings.NTotal = { score: 65, label: 'Moderate', color: '#ffc107' };
+    } else {
+      ratings.NTotal = { score: 90, label: 'High', color: '#4caf50' };
+    }
+  }
+
+  // --- CEC ---
+  if (!isNaN(cec)) {
+    if (cec < 5) {
+      ratings.KTK = { score: 15, label: 'Very low', color: '#f44336' };
+      recs.push({ pri: 'medium', cat: 'Soil amendment', title: 'Raise CEC',
+        detail: `CEC is ${cec} cmolc/kg, which is very low (sandy soil). Add a high rate of organic matter and biochar to increase cation exchange capacity.`,
+        products: ['High-rate compost','Biochar','Zeolite'] });
+    } else if (cec < 16) {
+      ratings.KTK = { score: 40, label: 'Low', color: '#ff9800' };
+      recs.push({ pri: 'low', cat: 'Soil amendment', title: 'Improve CEC',
+        detail: `CEC is ${cec} cmolc/kg, which is low. Organic matter and zeolite can help.`,
+        products: ['Compost','Zeolite','Biochar'] });
+    } else if (cec < 25) {
+      ratings.KTK = { score: 70, label: 'Moderate', color: '#ffc107' };
+    } else {
+      ratings.KTK = { score: 90, label: 'High', color: '#4caf50' };
+    }
+  }
+
+  // --- Base Saturation ---
+  if (!isNaN(bs)) {
+    if (bs < 20) {
+      ratings.KejBasa = { score: 15, label: 'Very low', color: '#f44336' };
+      recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Raise base saturation',
+        detail: `Base saturation is ${bs}%, which is very low. Intensive liming with dolomite is needed to increase exchangeable Ca and Mg.`,
+        products: ['Dolomite','Kieserite (MgSO4)'] });
+    } else if (bs < 40) {
+      ratings.KejBasa = { score: 35, label: 'Low', color: '#ff9800' };
+    } else if (bs < 60) {
+      ratings.KejBasa = { score: 60, label: 'Moderate', color: '#ffc107' };
+    } else {
+      ratings.KejBasa = { score: 90, label: 'High', color: '#4caf50' };
+    }
+  }
+
+  // --- Aluminum Saturation ---
+  if (!isNaN(al)) {
+    if (al > 20) {
+      ratings.KejAl = { score: Math.max(5, 100 - al), label: al > 40 ? 'Toxic' : 'High', color: '#f44336' };
+      recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Correct aluminum toxicity',
+        detail: `Al saturation is ${al}% (${al > 40 ? 'very high, toxic' : 'high'}). Lime immediately with dolomite at 3-5 t/ha. Choose an Al-tolerant variety.`,
+        products: ['Dolomite 3-5 t/ha','Al-tolerant variety','Organic matter'] });
+    } else {
+      ratings.KejAl = { score: 90, label: 'Safe', color: '#4caf50' };
+    }
+  }
+
+  // --- ESP (Sodicity) ---
+  if (!isNaN(esp) && esp > 15) {
+    ratings.ESP = { score: Math.max(10, 100 - esp * 2), label: 'Sodic', color: '#e91e63' };
+    recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Reclaim sodic soil',
+      detail: `ESP is ${esp}% (sodic). Apply gypsum at 5-10 t/ha to replace Na with Ca. Improve drainage.`,
+      products: ['Gypsum CaSO4 5-10 t/ha','Drainage improvement'] });
+  }
+
+  // --- EC (Salinity) ---
+  if (!isNaN(ec) && ec > 4) {
+    ratings.Salinitas = { score: Math.max(10, 100 - ec * 5), label: 'Saline', color: '#f44336' };
+    recs.push({ pri: 'high', cat: 'Management', title: 'Manage salinity',
+      detail: `EC is ${ec} dS/m (saline). Improve drainage, apply gypsum, and choose salt-tolerant crops.`,
+      products: ['Drainage improvement','Gypsum','Salt-tolerant crops'] });
+  }
+
+  // --- Texture-based ---
+  if (sand > 70) {
+    recs.push({ pri: 'medium', cat: 'Soil amendment', title: 'Improve sandy soil',
+      detail: `Sand is ${sand}% (sandy soil). Add organic matter to increase water and nutrient retention. Use a thick mulch.`,
+      products: ['High-rate compost','Biochar','Thick mulch','Slow-release fertilizer'] });
+  } else if (clay > 60) {
+    recs.push({ pri: 'low', cat: 'Management', title: 'Manage heavy clay soil',
+      detail: `Clay is ${clay}% (heavy soil). Improve structure with organic matter and minimum tillage. Avoid tillage when the soil is wet.`,
+      products: ['Compost','Minimum tillage','Drainage'] });
+  }
+
+  // --- Rekomendasi khusus tipe tanah bermasalah ---
+  const allWrb2 = components.map(c => c.wrb2);
+  if (allWrb2.includes('HS') || (!isNaN(oc) && oc >= 18)) {
+    recs.push({ pri: 'high', cat: 'Peat management', title: 'Ameliorate peat soil',
+      detail: 'Peat needs specific management. Keep the water table at 40-60 cm, apply mineral amendments (mineral soil, ash) and a complete macro- and micronutrient fertilizer. Avoid over-drainage, which causes subsidence and fire risk.',
+      products: ['Mineral soil','Dolomite 2-3 t/ha','Compound NPK + micronutrients','Wood ash','Water-table control'] });
+  }
+  if (allWrb2.includes('LP') || (!isNaN(coarse) && coarse >= 60)) {
+    recs.push({ pri: 'high', cat: 'Special management', title: 'Stony or shallow soil',
+      detail: 'Very stony or shallow soil is a major limitation. Consider raised beds, pots, or shallow-rooted crops. Bring in growing media.',
+      products: ['Raised bed','Brought-in growing media','Shallow-rooted crops','Thick mulch'] });
+  }
+  if (allWrb2.includes('AR')) {
+    recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Ameliorate sandy soil',
+      detail: 'Arenosols hold very little water and nutrients. Add clay or mineral soil, a very high rate of organic matter, and biochar to improve retention.',
+      products: ['Compost 20-30 t/ha','Biochar','Clay / bentonite','Slow-release fertilizer','Drip irrigation'] });
+  }
+  if (allWrb2.includes('PZ')) {
+    recs.push({ pri: 'high', cat: 'Soil amendment', title: 'Ameliorate Podzol',
+      detail: 'Podzols are strongly acidic and nutrients have been leached. Heavy liming, organic matter, and a complete fertilizer are needed.',
+      products: ['Dolomite 4-6 t/ha','High-rate compost','Complete NPK fertilizer','Mulch'] });
+  }
+
+  // --- Overall: rule-based ---
+  const MIN_SHARE = 25;
+  const problems = [];
+  const notes = [];
+  const BAD_WRB = { HS:'Peat (Histosol)', LP:'Stony/shallow (Leptosol)', SC:'Saline (Solonchak)',
+    SN:'Sodic (Solonetz)', RG:'Young/weakly developed (Regosol)', AR:'Sandy (Arenosol)', PZ:'Podzol' };
+
+  for (const comp of components) {
+    const isMajor = comp.share >= MIN_SHARE;
+    const target = isMajor ? problems : notes;
+    if (BAD_WRB[comp.wrb2]) {
+      target.push(`Component ${comp.seq} (${comp.share}%): ${BAD_WRB[comp.wrb2]} soil`);
+    }
+    if (comp.rootDepth === 4)
+      target.push(`Component ${comp.seq} (${comp.share}%): very shallow (<10 cm)`);
+    else if (comp.rootDepth === 3 && isMajor)
+      target.push(`Component ${comp.seq} (${comp.share}%): shallow (<50 cm)`);
+  }
+
+  if (!isNaN(oc) && oc >= 18 && wrb2 !== 'HS')
+    problems.push('Peat soil (organic C >= 18%)');
+  if (!isNaN(coarse) && coarse >= 60)
+    problems.push('Stony soil (coarse fragments ' + coarse + '%)');
+  if (drainage === 'VP' || drainage === '7')
+    problems.push('Very poor drainage - permanently waterlogged');
+  if (!isNaN(oc)  && oc < 1 && wrb2 !== 'HS')
+    problems.push('Organic C is very low (<1%)');
+  if (!isNaN(cec) && cec < 5)
+    problems.push('CEC is very low (<5 cmolc/kg)');
+  if (!isNaN(ph)  && (ph < 4.0 || ph > 8.5))
+    problems.push(ph < 4.0 ? 'Extremely acidic pH (<4.0)' : 'Extremely alkaline pH (>8.5)');
+  if (!isNaN(al)  && al >= 60)
+    problems.push('Aluminum toxicity (Al saturation >= 60%)');
+  if (!isNaN(esp) && esp >= 25)
+    problems.push('Severe sodicity (ESP >= 25%)');
+  if (!isNaN(ec)  && ec >= 8)
+    problems.push('Severe salinity (EC >= 8 dS/m)');
+
+  const isSubur = problems.length === 0;
+
+  let overallLabel, overallColor;
+  if (isSubur) { overallLabel = 'Fertile'; overallColor = '#4caf50'; }
+  else { overallLabel = 'Infertile'; overallColor = '#f44336'; }
+
+  if (precip) {
+    const annual = precip.reduce((a, b) => a + b, 0);
+    const dryMonths = precip.filter(v => v < 60).length;
+    if (dryMonths >= 6) {
+      recs.push({ pri: 'medium', cat: 'Climate', title: 'Manage a long dry season',
+        detail: `${dryMonths} dry months (<60 mm). Use a thick mulch, drip irrigation, and drought-tolerant crops.`,
+        products: ['Mulch','Drip irrigation','Drought-tolerant variety'] });
+    }
+    if (annual > 3000) {
+      recs.push({ pri: 'low', cat: 'Climate', title: 'Very high rainfall',
+        detail: `Annual rainfall is ${Math.round(annual)} mm, which is very high. Watch for erosion and nutrient leaching. Use terraces and split fertilizer applications.`,
+        products: ['Terracing','Split fertilizer application','Cover crop'] });
+    }
+  }
+
+  const priOrder = { high: 0, medium: 1, low: 2 };
+  recs.sort((a, b) => priOrder[a.pri] - priOrder[b.pri]);
+
+  renderFertilityScore(0, overallLabel, overallColor, ratings, problems, notes);
+  renderRecommendations(recs);
+}
+
+function renderFertilityScore(score, label, color, ratings, problems, notes) {
+  const limitText = problems && problems.length > 0
+    ? problems.join('; ')
+    : 'All primary indicators are in good condition';
+  const notesHtml = (notes && notes.length > 0)
+    ? `<div class="score-desc" style="margin-top:4px;color:#ffa726;font-size:10.5px">Note: ${notes.join('; ')}</div>`
+    : '';
+  document.getElementById('fertility-score').innerHTML = `
+    <div class="score-circle" style="background:${color}">${label === 'Fertile' ? '&#10003;' : '&#10007;'}</div>
+    <div class="score-detail">
+      <div class="score-label">${label}</div>
+      <div class="score-desc">${limitText}</div>
+      ${notesHtml}
+    </div>`;
+
+  const barsEl = document.getElementById('rating-bars');
+  const nm = { pH:'pH', COrganik:'Organic C', NTotal:'Total N', KTK:'CEC',
+    KejBasa:'Base sat.', KejAl:'Al sat.', ESP:'ESP', Salinitas:'Salinity' };
+
+  barsEl.innerHTML = Object.entries(ratings).map(([key, r]) => `
+    <div class="rating-row">
+      <span class="r-label">${nm[key] || key}</span>
+      <div class="r-bar"><div class="r-fill" style="width:${r.score}%;background:${r.color}"></div></div>
+      <span class="r-val" style="color:${r.color}">${r.label}</span>
+    </div>`).join('');
+}
+
+function renderRecommendations(recs) {
+  const el = document.getElementById('rec-list');
+  if (!recs.length) {
+    el.innerHTML = '<div style="text-align:center;color:#6b7280;padding:12px">Soil condition is good. Continue routine maintenance.</div>';
+    return;
+  }
+  el.innerHTML = recs.map(r => `
+    <div class="rec-item ${r.pri}">
+      <div class="rec-cat">${r.cat}</div>
+      <div class="rec-title">${r.title}</div>
+      <div class="rec-detail">${r.detail}</div>
+      ${r.products ? '<div class="rec-products">' + r.products.map(p => `<span class="rec-chip">${p}</span>`).join('') + '</div>' : ''}
+    </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   CLIMATE OUTLOOK - 6 Month Seasonal Forecast
+   Open-Meteo Seasonal (ECMWF SEAS5) + Archive API
+   Variables: Precipitation, Temperature, RH, VPD
+   ═══════════════════════════════════════════════════════ */
+
+const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const VAR_CONFIG = {
+  precip: { label: 'Precipitation', unit: 'mm', decimals: 0, aggregate: 'sum', chartType: 'bar',
+    normalLabel: 'Normal (1991-2020)', forecastLabel: 'SEAS5 forecast' },
+  temp:   { label: 'Mean temperature', unit: '\u00B0C', decimals: 1, aggregate: 'mean', chartType: 'line',
+    normalLabel: 'Historical normal', forecastLabel: 'SEAS5 forecast' },
+  rh:     { label: 'Relative humidity', unit: '%', decimals: 1, aggregate: 'mean', chartType: 'line',
+    normalLabel: 'Historical normal', forecastLabel: 'SEAS5 forecast' },
+  vpd:    { label: 'Accumulated VPD', unit: 'kPa', decimals: 1, aggregate: 'sum', chartType: 'bar',
+    normalLabel: 'Historical normal', forecastLabel: 'SEAS5 forecast' }
+};
+
+function computeVPD(tempC, rhPct) {
+  const es = 0.6108 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+  return Math.max(0, es * (1 - rhPct / 100));
+}
+
+function initClimateVarTabs() {
+  document.querySelectorAll('#climate-var-tabs .climate-var-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#climate-var-tabs .climate-var-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.climate-var-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.var).classList.add('active');
+    });
+  });
+}
+
+async function fetchJson(url, label) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${label}: HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function fetchAndRenderClimate(lat, lon, allRows, seq) {
+  const recsEl = document.getElementById('climate-recs');
+  const loading = '<div style="color:#6b7280;font-size:11px;padding:4px">Fetching climate data...</div>';
+  for (const v of ['precip','temp','rh','vpd']) {
+    const el = document.getElementById('detail-' + v);
+    if (el) el.innerHTML = loading;
+  }
+  document.getElementById('precip-summary').innerHTML = loading;
+  if (precipChart) { precipChart.destroy(); precipChart = null; }
+  recsEl.innerHTML = '';
+
+  const latStr = lat.toFixed(4), lonStr = lon.toFixed(4);
+  const histReq = fetchJson(`https://archive-api.open-meteo.com/v1/archive?latitude=${latStr}&longitude=${lonStr}`
+    + `&daily=temperature_2m_mean,relative_humidity_2m_mean,precipitation_sum`
+    + `&timezone=auto&start_date=1991-01-01&end_date=2020-12-31`, 'Historical climate');
+  const forecastReq = fetchJson(`https://seasonal-api.open-meteo.com/v1/seasonal?latitude=${latStr}&longitude=${lonStr}`
+    + `&daily=precipitation_sum,temperature_2m_mean,relative_humidity_2m_mean`
+    + `&timezone=auto&models=ecmwf_seas5_ensemble_mean`, 'Seasonal forecast');
+  forecastReq.catch(() => {});
+
+  let histNormals;
+  try {
+    histNormals = computeHistoricalNormals(await histReq);
+  } catch (err) {
+    if (seq !== clickSeq) return;
+    console.error('Climate fetch error:', err);
+    renderPrecipitation(null);
+    renderForecastError(err);
+    return;
+  }
+  if (seq !== clickSeq) return;
+
+  const precipNormals = MONTHS.map((_, m) => histNormals[m].precip);
+  renderPrecipitation(precipNormals);
+  renderFertility(allRows, precipNormals, allRows);
+
+  try {
+    const fData = await forecastReq;
+    if (seq !== clickSeq) return;
+    renderForecast(fData, histNormals, recsEl);
+  } catch (err) {
+    if (seq !== clickSeq) return;
+    console.error('Forecast fetch error:', err);
+    renderForecastError(err);
+  }
+}
+
+function renderForecastError(err) {
+  for (const v of ['precip','temp','rh','vpd']) {
+    const el = document.getElementById('detail-' + v);
+    if (el) el.innerHTML = `<div style="color:#ef5350;font-size:11px;padding:4px">
+      Could not load climate data: ${err.message}. Check your internet connection and try again.</div>`;
+  }
+}
+
+function renderForecast(fData, histNormals, recsEl) {
+  {
+    const forecastMonthly = aggregateForecastMonthly(fData);
+    const months = Object.keys(forecastMonthly).sort().slice(0, 6);
+
+    const allAnomalies = {};
+    for (const varKey of ['precip','temp','rh','vpd']) {
+      const cfg = VAR_CONFIG[varKey];
+      const labels = [], normalVals = [], forecastVals = [], anomalies = [];
+
+      for (const m of months) {
+        const fm = forecastMonthly[m];
+        const mi = fm.monthIdx;
+        let fVal, nVal;
+
+        if (varKey === 'precip') {
+          fVal = fm.precip.sum;
+          nVal = histNormals[mi].precip;
+        } else if (varKey === 'temp') {
+          fVal = fm.temp.sum / fm.temp.count;
+          nVal = histNormals[mi].temp;
+        } else if (varKey === 'rh') {
+          fVal = fm.rh.sum / fm.rh.count;
+          nVal = histNormals[mi].rh;
+        } else {
+          fVal = fm.vpd.sum;
+          nVal = histNormals[mi].vpd;
+        }
+
+        const rounded = v => parseFloat(v.toFixed(cfg.decimals));
+        forecastVals.push(rounded(fVal));
+        normalVals.push(rounded(nVal));
+        labels.push(MONTH_NAMES_SHORT[mi]);
+
+        const pctDev = nVal > 0.001 ? ((fVal - nVal) / nVal) * 100 : 0;
+        anomalies.push({ month: MONTH_NAMES_SHORT[mi], forecast: rounded(fVal),
+          normal: rounded(nVal), pctDev: Math.round(pctDev), monthIdx: mi });
+      }
+
+      renderVarChart(varKey, labels, normalVals, forecastVals, cfg);
+      renderVarDetail(varKey, anomalies, cfg);
+      allAnomalies[varKey] = anomalies;
+    }
+
+    renderClimateSmartRecs(allAnomalies, recsEl);
+  }
+}
+
+function computeHistoricalNormals(hData) {
+  const monthly = {};
+  for (let m = 0; m < 12; m++) monthly[m] = { tempS: 0, rhS: 0, precipS: 0, vpdS: 0, cnt: 0, days: 0 };
+
+  const dates = hData.daily.time;
+  const temps = hData.daily.temperature_2m_mean;
+  const rhs = hData.daily.relative_humidity_2m_mean;
+  const precips = hData.daily.precipitation_sum;
+
+  const yearMonthSums = {};
+  for (let i = 0; i < dates.length; i++) {
+    const d = new Date(dates[i]);
+    const mi = d.getMonth();
+    const ym = d.getFullYear() + '-' + mi;
+    const t = temps[i] ?? 0, r = rhs[i] ?? 0, p = precips[i] ?? 0;
+    const vpd = computeVPD(t, r);
+
+    if (!yearMonthSums[ym]) yearMonthSums[ym] = { mi, tempS: 0, rhS: 0, precipS: 0, vpdS: 0, days: 0 };
+    yearMonthSums[ym].tempS += t;
+    yearMonthSums[ym].rhS += r;
+    yearMonthSums[ym].precipS += p;
+    yearMonthSums[ym].vpdS += vpd;
+    yearMonthSums[ym].days += 1;
+  }
+
+  const monthBuckets = {};
+  for (let m = 0; m < 12; m++) monthBuckets[m] = { tempVals: [], rhVals: [], precipVals: [], vpdVals: [] };
+
+  for (const ym of Object.values(yearMonthSums)) {
+    const b = monthBuckets[ym.mi];
+    b.tempVals.push(ym.tempS / ym.days);
+    b.rhVals.push(ym.rhS / ym.days);
+    b.precipVals.push(ym.precipS);
+    b.vpdVals.push(ym.vpdS);
+  }
+
+  const normals = {};
+  for (let m = 0; m < 12; m++) {
+    const b = monthBuckets[m];
+    const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+    normals[m] = {
+      temp: avg(b.tempVals),
+      rh: avg(b.rhVals),
+      precip: avg(b.precipVals),
+      vpd: avg(b.vpdVals)
+    };
+  }
+  return normals;
+}
+
+function aggregateForecastMonthly(fData) {
+  const dates = fData.daily.time;
+  const temps = fData.daily.temperature_2m_mean;
+  const rhs = fData.daily.relative_humidity_2m_mean;
+  const precips = fData.daily.precipitation_sum;
+  const result = {};
+
+  for (let i = 0; i < dates.length; i++) {
+    const d = new Date(dates[i]);
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const mi = d.getMonth();
+    const t = temps[i] ?? 0, r = rhs[i] ?? 0, p = precips[i] ?? 0;
+    const vpd = computeVPD(t, r);
+
+    if (!result[key]) result[key] = { monthIdx: mi,
+      precip: { sum: 0 }, temp: { sum: 0, count: 0 },
+      rh: { sum: 0, count: 0 }, vpd: { sum: 0 } };
+
+    result[key].precip.sum += p;
+    result[key].temp.sum += t;
+    result[key].temp.count += 1;
+    result[key].rh.sum += r;
+    result[key].rh.count += 1;
+    result[key].vpd.sum += vpd;
+  }
+  return result;
+}
+
+function renderVarChart(varKey, labels, normals, forecasts, cfg) {
+  const ctx = document.getElementById('chart-' + varKey);
+  if (climateCharts[varKey]) climateCharts[varKey].destroy();
+
+  const isBar = cfg.chartType === 'bar';
+  const datasets = [
+    {
+      label: cfg.normalLabel,
+      data: normals,
+      backgroundColor: isBar ? 'rgba(66,165,245,0.35)' : undefined,
+      borderColor: '#42a5f5',
+      borderWidth: isBar ? 1 : 2,
+      borderRadius: isBar ? 3 : undefined,
+      borderDash: isBar ? undefined : [5, 3],
+      pointRadius: isBar ? undefined : 3,
+      pointBackgroundColor: isBar ? undefined : '#42a5f5',
+      fill: false,
+      tension: isBar ? undefined : 0.3,
+      order: 2,
+      type: isBar ? 'bar' : 'line'
+    },
+    {
+      label: cfg.forecastLabel,
+      data: forecasts,
+      backgroundColor: isBar ? forecasts.map((f, i) => {
+        const diff = normals[i] > 0.001 ? (f - normals[i]) / normals[i] : 0;
+        return diff > 0.2 ? 'rgba(33,150,243,0.7)' : diff < -0.2 ? 'rgba(255,152,0,0.7)' : 'rgba(76,175,80,0.55)';
+      }) : undefined,
+      borderColor: isBar ? forecasts.map((f, i) => {
+        const diff = normals[i] > 0.001 ? (f - normals[i]) / normals[i] : 0;
+        return diff > 0.2 ? '#1565c0' : diff < -0.2 ? '#e65100' : '#388e3c';
+      }) : '#ff7043',
+      borderWidth: isBar ? 1 : 2.5,
+      borderRadius: isBar ? 3 : undefined,
+      pointRadius: isBar ? undefined : 4,
+      pointBackgroundColor: isBar ? undefined : '#ff7043',
+      fill: false,
+      tension: isBar ? undefined : 0.3,
+      order: 1,
+      type: isBar ? 'bar' : 'line'
+    }
+  ];
+
+  climateCharts[varKey] = new Chart(ctx, {
+    type: isBar ? 'bar' : 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: '#8a94a8', font: { size: 10 }, boxWidth: 12, padding: 8 } },
+        tooltip: {
+          callbacks: {
+            afterBody(tooltipCtx) {
+              const i = tooltipCtx[0].dataIndex;
+              const n = normals[i], f = forecasts[i];
+              if (Math.abs(n) > 0.001) {
+                const pct = Math.round(((f - n) / n) * 100);
+                return `Anomaly: ${pct > 0 ? '+' : ''}${pct}%`;
+              }
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8a94a8', font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: '#1e2333' },
+             title: { display: true, text: cfg.unit, color: '#6b7280', font: { size: 9 } } }
+      }
+    }
+  });
+}
+
+function renderVarDetail(varKey, anomalies, cfg) {
+  const el = document.getElementById('detail-' + varKey);
+  if (!el) return;
+  const maxVal = Math.max(...anomalies.map(a => Math.max(Math.abs(a.forecast), Math.abs(a.normal))), 0.01);
+
+  el.innerHTML = anomalies.map(a => {
+    let badge, cls;
+    if (a.pctDev > 50) { badge = 'Much above'; cls = 'badge-much-above'; }
+    else if (a.pctDev > 20) { badge = 'Above normal'; cls = 'badge-above'; }
+    else if (a.pctDev < -50) { badge = 'Much below'; cls = 'badge-much-below'; }
+    else if (a.pctDev < -20) { badge = 'Below normal'; cls = 'badge-below'; }
+    else { badge = 'Normal'; cls = 'badge-normal'; }
+
+    const nW = (Math.abs(a.normal) / maxVal) * 100;
+    const fW = (Math.abs(a.forecast) / maxVal) * 100;
+    const sign = a.pctDev > 0 ? '+' : '';
+
+    return `<div class="outlook-row">
+      <span class="outlook-month">${a.month}</span>
+      <div class="outlook-bar-wrap">
+        <div class="outlook-bar">
+          <div class="outlook-bar-normal" style="width:${nW}%"></div>
+          <div class="outlook-bar-forecast" style="width:${fW}%;background:${
+            a.pctDev > 20 ? '#42a5f5' : a.pctDev < -20 ? '#ffa726' : '#66bb6a'}80"></div>
+        </div>
+        <div class="outlook-vals">
+          <span>Normal: ${a.normal} ${cfg.unit}</span>
+          <span>Forecast: ${a.forecast} ${cfg.unit} (${sign}${a.pctDev}%)</span>
+        </div>
+      </div>
+      <span class="outlook-badge ${cls}">${badge}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderClimateSmartRecs(allAnomalies, container) {
+  const recs = [];
+  const pA = allAnomalies.precip || [];
+  const tA = allAnomalies.temp || [];
+  const rA = allAnomalies.rh || [];
+  const vA = allAnomalies.vpd || [];
+
+  const wetMonths = pA.filter(a => a.pctDev > 20);
+  const dryMonths = pA.filter(a => a.pctDev < -20);
+  const veryWet = pA.filter(a => a.pctDev > 50);
+  const veryDry = pA.filter(a => a.pctDev < -50);
+
+  if (veryWet.length > 0) {
+    recs.push({ cls: 'wet', html: `<strong>High flood and waterlogging risk</strong> - ${veryWet.map(m => m.month).join(', ')} are forecast far above normal rainfall.
+      <br>- Improve field and channel drainage
+      <br>- Delay planting until the rainfall peak has passed
+      <br>- Prepare waterlogging-tolerant varieties
+      <br>- Raise beds for annual crops` });
+  }
+  if (wetMonths.length >= 3) {
+    recs.push({ cls: 'wet', html: `<strong>Prolonged wet period</strong> - ${wetMonths.length} months with above-normal rainfall.
+      <br>- Use small split fertilizer doses to reduce leaching
+      <br>- Watch for fungal disease (blast, stem rot)
+      <br>- Use a preventive fungicide at critical stages` });
+  } else if (wetMonths.length > 0) {
+    recs.push({ cls: 'wet', html: `<strong>Wet months: ${wetMonths.map(m => m.month).join(', ')}</strong> - Rainfall above normal.
+      <br>- Time fertilizer applications to avoid heavy rain
+      <br>- Strengthen terraces and silt pits to limit erosion` });
+  }
+  if (veryDry.length > 0) {
+    recs.push({ cls: 'dry', html: `<strong>Serious drought risk</strong> - ${veryDry.map(m => m.month).join(', ')} are forecast far below normal rainfall.
+      <br>- Start supplemental irrigation now
+      <br>- Apply a thick mulch to hold moisture
+      <br>- Choose short-duration, drought-tolerant varieties` });
+  } else if (dryMonths.length > 0) {
+    recs.push({ cls: 'dry', html: `<strong>Dry months: ${dryMonths.map(m => m.month).join(', ')}</strong> - Rainfall below normal.
+      <br>- Store water for irrigation
+      <br>- Use organic mulch to conserve soil water
+      <br>- Use drip irrigation to save water` });
+  }
+
+  const hotMonths = tA.filter(a => a.forecast > 28 || a.pctDev > 10);
+  const veryHot = tA.filter(a => a.forecast > 30);
+  if (veryHot.length > 0) {
+    recs.push({ cls: 'heat', html: `<strong>Heat-stress risk</strong> - Mean temperature above 30\u00B0C in ${veryHot.map(m => m.month + ' (' + m.forecast + '\u00B0C)').join(', ')}.
+      <br>- Plant heat-tolerant varieties
+      <br>- Irrigate in the morning or evening to cool the root zone
+      <br>- Use a reflective mulch (light straw) to lower soil temperature
+      <br>- Avoid pesticide sprays at peak temperature (>32\u00B0C)` });
+  } else if (hotMonths.length > 0) {
+    recs.push({ cls: 'heat', html: `<strong>Above-normal temperature: ${hotMonths.map(m => m.month).join(', ')}</strong>
+      <br>- Irrigate more often
+      <br>- Use shade net for heat-sensitive crops
+      <br>- Move spray schedules to the morning` });
+  }
+
+  const coolMonths = tA.filter(a => a.pctDev < -10);
+  if (coolMonths.length > 0) {
+    recs.push({ cls: 'wet', html: `<strong>Below-normal temperature: ${coolMonths.map(m => m.month).join(', ')}</strong>
+      <br>- Watch for fungal disease in cool, humid weather
+      <br>- Adjust N fertilization because mineralization slows at low temperature
+      <br>- Consider highland crops` });
+  }
+
+  const highRH = rA.filter(a => a.forecast > 85 || a.pctDev > 10);
+  const lowRH = rA.filter(a => a.forecast < 65 || a.pctDev < -15);
+  if (highRH.length >= 3) {
+    recs.push({ cls: 'wet', html: `<strong>Prolonged high humidity</strong> - RH above normal for ${highRH.length} months (${highRH.map(m => m.month + ': ' + m.forecast + '%').join(', ')}).
+      <br>- Higher disease risk: blast, leaf blight, fruit rot
+      <br>- Widen plant spacing for airflow
+      <br>- Apply a preventive copper or mancozeb fungicide
+      <br>- Prune to improve canopy aeration` });
+  }
+  if (lowRH.length > 0) {
+    recs.push({ cls: 'dry', html: `<strong>Low humidity: ${lowRH.map(m => m.month + ': ' + m.forecast + '%').join(', ')}</strong>
+      <br>- Water more often
+      <br>- Mulch to keep the root zone moist
+      <br>- Watch for mites and thrips, which prefer dry conditions` });
+  }
+
+  const highVPD = vA.filter(a => a.pctDev > 30);
+  const veryHighVPD = vA.filter(a => a.pctDev > 60);
+  if (veryHighVPD.length > 0) {
+    recs.push({ cls: 'heat', html: `<strong>Very high VPD</strong> - Vapor-pressure deficit is far above normal in ${veryHighVPD.map(m => m.month).join(', ')}. Crops face severe evapotranspiration stress.
+      <br>- Increase irrigation 30-50% above normal
+      <br>- Apply an anti-transpirant (kaolin spray) on horticultural crops
+      <br>- Install 30-50% shade net to cut direct radiation
+      <br>- Prefer water-efficient C4 crops (maize, sorghum)` });
+  } else if (highVPD.length > 0) {
+    recs.push({ cls: 'heat', html: `<strong>Above-normal VPD: ${highVPD.map(m => m.month).join(', ')}</strong> - Evapotranspiration is higher.
+      <br>- Irrigate more often, with less water per application
+      <br>- Use a thick mulch (5-10 cm) to reduce soil evaporation
+      <br>- Check for midday wilting` });
+  }
+
+  const lowVPD = vA.filter(a => a.pctDev < -30);
+  if (lowVPD.length > 0) {
+    recs.push({ cls: 'wet', html: `<strong>Low VPD: ${lowVPD.map(m => m.month).join(', ')}</strong> - Air is near saturation and transpiration is slow.
+      <br>- Reduce irrigation because evapotranspiration is low
+      <br>- Increase ventilation in greenhouses and screen houses
+      <br>- Watch for Ca and B deficiency caused by slow transpiration` });
+  }
+
+  const heatDryMonths = tA.filter(a => a.pctDev > 10)
+    .filter(a => dryMonths.some(d => d.month === a.month));
+  if (heatDryMonths.length > 0) {
+    recs.push({ cls: 'heat', html: `<strong>Combined stress: heat and drought</strong> - ${heatDryMonths.map(m => m.month).join(', ')} combine high temperature with low rainfall.
+      <br>- This is the most critical condition for cropping
+      <br>- Prioritize irrigation for high-value crops
+      <br>- Consider fallow on marginal land
+      <br>- Store reserve livestock feed for this period` });
+  }
+
+  const transitions = [];
+  for (let i = 1; i < pA.length; i++) {
+    if ((pA[i-1].pctDev < -20 && pA[i].pctDev > 20) || (pA[i-1].pctDev > 20 && pA[i].pctDev < -20))
+      transitions.push(pA[i].month);
+  }
+  if (transitions.length > 0) {
+    recs.push({ cls: 'wet', html: `<strong>Extreme weather transition</strong> - A sharp change in ${transitions.join(', ')}.
+      <br>- Prepare drainage before a dry-to-wet shift
+      <br>- Adjust the planting calendar to the transition` });
+  }
+
+  if (recs.length === 0) {
+    recs.push({ cls: '', html: `<strong>Near-normal conditions</strong> - All climate variables for the next 6 months are forecast close to normal. Follow standard seasonal management.` });
+  }
+
+  const avgPrecipDev = pA.length ? pA.reduce((s, a) => s + a.pctDev, 0) / pA.length : 0;
+  const avgTempDev = tA.length ? tA.reduce((s, a) => s + a.pctDev, 0) / tA.length : 0;
+  if (Math.abs(avgPrecipDev) < 15 && Math.abs(avgTempDev) < 10) {
+    recs.push({ cls: '', html: `<strong>Planting schedule</strong> - The climate pattern is near normal. Follow the local planting calendar.` });
+  } else if (avgPrecipDev > 15) {
+    recs.push({ cls: 'wet', html: `<strong>Planting-schedule advice</strong> - A wet trend, and ${avgTempDev > 5 ? 'warm' : 'near-normal'} temperature.
+      <br>- Plant flood-tolerant rice varieties (Inpara)
+      <br>- Use the extra water for rice-fish systems
+      <br>- Watch for pests and disease in warm, humid conditions` });
+  } else if (avgPrecipDev < -15) {
+    recs.push({ cls: 'dry', html: `<strong>Planting-schedule advice</strong> - A dry trend, and ${avgTempDev > 5 ? 'hot' : 'near-normal'} temperature.
+      <br>- Use drought-tolerant upland rice or secondary crops
+      <br>- Plant earlier to use the first rains
+      <br>- Intercrop to use water more efficiently` });
+  }
+
+  container.innerHTML = recs.map(r =>
+    `<div class="climate-rec ${r.cls}">${r.html}</div>`
+  ).join('');
+}
+</script>
+</body>
+</html>
