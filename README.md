@@ -20,6 +20,7 @@ This is a screening tool built on coarse global datasets. It does not replace a 
 | `data/hwsd2_idn.sqlite`, `data/hwsd2_idn.tif` | Indonesian subset of the Harmonized World Soil Database v2.0, FAO & IIASA (2023), https://doi.org/10.4060/cc3823en | CC BY-NC-SA 3.0 IGO (non-commercial, share-alike) |
 | `data/provinces.geojson`, `data/neighbours.geojson` | Natural Earth admin-1 boundaries, simplified | Public domain |
 | Satellite basemap | Sentinel-2 cloudless 2016 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016), https://s2maps.eu | CC BY 4.0 |
+| Place names (city, district, province) | OpenStreetMap Nominatim reverse geocoding, one request per map click | ODbL; usage limited to ~1 req/s |
 | Historical climate and seasonal forecast | Open-Meteo Historical Weather API (ERA5) and Seasonal Forecast API (ECMWF SEAS5) | CC BY 4.0, free for non-commercial use |
 
 Because the soil data is CC BY-NC-SA, this project as a whole is for non-commercial use.

@@ -401,6 +401,12 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
             <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">https://www.naturalearthdata.com/</a>
           </div>
           <div class="cite-item">
+            <div class="cite-title">Place names &mdash; OpenStreetMap Nominatim</div>
+            <span class="cite-org">OpenStreetMap contributors</span><br>
+            City, district, and province names come from reverse geocoding through the public Nominatim service. Data &copy; OpenStreetMap contributors, ODbL.<br>
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">https://www.openstreetmap.org/copyright</a>
+          </div>
+          <div class="cite-item">
             <div class="cite-title">WRB &mdash; Soil classification</div>
             <span class="cite-org">IUSS Working Group WRB (2022)</span><br>
             IUSS Working Group WRB (2022). <em>World Reference Base for Soil Resources.</em> 4th edition. International Union of Soil Sciences, Vienna.<br>
@@ -438,9 +444,11 @@ let lookups = {};
 let activeLayerIdx = 0;
 let currentLayers = [];
 let clickSeq = 0;
+let lastPlaceFetch = 0;
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DATA_DIR = 'data/';
+const NOMINATIM = 'https://nominatim.openstreetmap.org/reverse';
 
 async function fetchData(name, kind) {
   const resp = await fetch(DATA_DIR + name);
@@ -741,13 +749,21 @@ async function onMapClick(e) {
     }
 
     currentLayers = allRows;
-    renderLocation(lat, lon, prov, smuId, smuData);
+    renderLocation(lat, lon, prov, smuId, smuData, null);
     renderAllComponents(allRows);
     renderFertility(allRows, null, allRows);
 
     const provName = prov ? prov.NAME_1 : 'Indonesia';
     document.getElementById('loc-summary').textContent =
       `${provName} | SMU ${smuId} | ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+    fetchPlaceName(lat, lon, seq).then(place => {
+      if (seq !== clickSeq || !place) return;
+      renderLocation(lat, lon, prov, smuId, smuData, place);
+      const label = place.short || place.city || place.district || place.state || provName;
+      document.getElementById('loc-summary').textContent =
+        `${label} | SMU ${smuId} | ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    });
 
     fetchAndRenderClimate(lat, lon, allRows, seq);
 
@@ -769,15 +785,64 @@ function clearCards() {
   }
 }
 
+// ── Place name (OpenStreetMap Nominatim) ──────────────────────────
+async function fetchPlaceName(lat, lon, seq) {
+  const wait = Math.max(0, 1100 - (Date.now() - lastPlaceFetch));
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  if (seq !== clickSeq) return null;
+  lastPlaceFetch = Date.now();
+  try {
+    const url = `${NOMINATIM}?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`
+      + `&format=jsonv2&addressdetails=1&zoom=14&accept-language=en`;
+    const data = await fetchJson(url, 'OpenStreetMap Nominatim');
+    if (seq !== clickSeq || !data || data.error) return null;
+    return parseNominatimPlace(data);
+  } catch (err) {
+    console.warn('Place lookup failed:', err.message);
+    return null;
+  }
+}
+
+function parseNominatimPlace(data) {
+  const a = data.address || {};
+  const city = a.city || a.town || a.municipality || a.village || a.hamlet
+    || a.suburb || a.neighbourhood || a.city_district || '';
+  const district = a.county || a.city_district || a.state_district || a.regency || '';
+  const state = a.state || a.province || '';
+  const country = a.country || '';
+  const parts = [];
+  if (city && city !== district) parts.push(city);
+  if (district) parts.push(district);
+  if (state) parts.push(state);
+  return {
+    city: city || '',
+    district: district || '',
+    state: state || '',
+    country: country || '',
+    short: parts[0] || '',
+    display: parts.join(', ') || data.display_name || '',
+  };
+}
+
 // ── Render: Location ──────────────────────────────────────────────
-function renderLocation(lat, lon, prov, smuId, smu) {
+function renderLocation(lat, lon, prov, smuId, smu, place) {
   const el = document.getElementById('loc-grid');
+  const province = (place && place.state) || (prov ? prov.NAME_1 : '-');
   const items = [
     ['Latitude', lat.toFixed(5) + '\u00B0'],
     ['Longitude', lon.toFixed(5) + '\u00B0'],
-    ['Province', prov ? prov.NAME_1 : '-'],
-    ['HWSD2 SMU ID', smuId],
   ];
+  if (place) {
+    if (place.city) items.push(['City / village', place.city]);
+    if (place.district && place.district !== place.city) items.push(['District / regency', place.district]);
+    items.push(['Province', province]);
+    if (place.country) items.push(['Country', place.country]);
+  } else {
+    items.push(['City / village', 'Looking up\u2026']);
+    items.push(['District / regency', 'Looking up\u2026']);
+    items.push(['Province', province]);
+  }
+  items.push(['HWSD2 SMU ID', smuId]);
   if (smu) {
     items.push(['Climate (Koppen)', lk('D_KOPPEN', smu.KOPPEN)]);
     items.push(['Coverage', lk('D_COVERAGE', smu.COVERAGE)]);
