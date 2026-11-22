@@ -235,6 +235,30 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
 #map.plain{background:#cfdde6}
 #map.sat{background:#0b1a2a}
 .leaflet-tooltip.prov-tooltip{font-size:11.5px;font-weight:600}
+.leaflet-tooltip.city-label{
+  background:transparent;border:none;box-shadow:none;color:#fff;
+  font-weight:700;letter-spacing:.2px;padding:0;margin:0;
+  text-shadow:0 0 4px rgba(0,0,0,.95),0 1px 2px rgba(0,0,0,.9),1px 0 2px rgba(0,0,0,.9);
+  white-space:nowrap;pointer-events:none;
+}
+.leaflet-tooltip.city-label:before{display:none}
+.leaflet-tooltip.city-label.major{font-size:12.5px}
+.leaflet-tooltip.city-label.mid{font-size:11px}
+.leaflet-tooltip.city-label.minor{font-size:10px;font-weight:600;color:#f0f4f8}
+#map.plain .leaflet-tooltip.city-label{
+  color:#1a1f2e;
+  text-shadow:0 0 3px rgba(255,255,255,.95),0 1px 1px rgba(255,255,255,.8);
+}
+.prov-name{
+  display:inline-block;transform:translate(-50%,-50%);
+  font-size:11px;font-weight:700;letter-spacing:.3px;color:rgba(255,255,255,.82);
+  text-shadow:0 0 4px rgba(0,0,0,.9),0 1px 2px rgba(0,0,0,.85);
+  white-space:nowrap;pointer-events:none;
+}
+#map.plain .prov-name{
+  color:rgba(45,70,50,.75);
+  text-shadow:0 0 3px rgba(255,255,255,.9);
+}
 
 #back-link{
   position:absolute;left:12px;bottom:24px;z-index:600;
@@ -397,7 +421,7 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
           <div class="cite-item">
             <div class="cite-title">Natural Earth &mdash; Boundaries</div>
             <span class="cite-org">Natural Earth</span><br>
-            Province and country outlines made with Natural Earth (public domain), simplified for the web.<br>
+            Province outlines, neighbouring land, and city points made with Natural Earth (public domain), simplified for the web.<br>
             <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">https://www.naturalearthdata.com/</a>
           </div>
           <div class="cite-item">
@@ -506,9 +530,10 @@ async function initMap() {
     },
   );
 
-  const [neighbours, provinces] = await Promise.all([
+  const [neighbours, provinces, cities] = await Promise.all([
     fetchData('neighbours.geojson', 'json'),
     fetchData('provinces.geojson', 'json'),
+    fetchData('cities.geojson', 'json'),
   ]);
   provincesGeoJSON = provinces;
 
@@ -522,7 +547,7 @@ async function initMap() {
       interactive: false,
     }),
   ]);
-  plain.options = { attribution: 'Boundaries: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>' };
+  plain.options = { attribution: 'Boundaries &amp; cities: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>' };
 
   provincesLayer = L.geoJSON(provinces, {
     style: { color: '#0d7a3e', weight: 1.2, fillColor: 'transparent', fillOpacity: 0, opacity: 0.8 },
@@ -531,13 +556,82 @@ async function initMap() {
     },
   });
 
+  const provinceLabels = L.layerGroup();
+  provinces.features.forEach(f => {
+    try {
+      const c = L.geoJSON(f).getBounds().getCenter();
+      const marker = L.marker(c, {
+        interactive: false,
+        icon: L.divIcon({
+          className: '',
+          html: `<span class="prov-name">${f.properties.NAME_1}</span>`,
+          iconSize: [0, 0],
+        }),
+      });
+      provinceLabels.addLayer(marker);
+    } catch (_) {}
+  });
+
+  const citiesLayer = L.geoJSON(cities, {
+    pointToLayer: (f, latlng) => {
+      const pop = f.properties.pop || 0;
+      const rank = f.properties.rank || 10;
+      const major = rank <= 3 || pop >= 1000000;
+      const mid = !major && (rank <= 5 || pop >= 250000);
+      const r = major ? 4.5 : mid ? 3.5 : 2.5;
+      const marker = L.circleMarker(latlng, {
+        radius: r,
+        color: '#fff',
+        weight: 1.2,
+        fillColor: major ? '#ffd54f' : mid ? '#81c784' : '#90caf9',
+        fillOpacity: 0.95,
+        interactive: true,
+      });
+      const cls = major ? 'major' : mid ? 'mid' : 'minor';
+      marker.bindTooltip(f.properties.name, {
+        permanent: true,
+        direction: 'right',
+        offset: [6, 0],
+        className: `city-label ${cls}`,
+        opacity: 1,
+      });
+      marker.bindPopup(
+        `<strong>${f.properties.name}</strong>`
+        + (f.properties.admin ? `<br>${f.properties.admin}` : '')
+        + (pop ? `<br>Population ~ ${pop.toLocaleString('en-US')}` : ''),
+      );
+      marker._cityRank = major ? 1 : mid ? 2 : 3;
+      return marker;
+    },
+  });
+
+  function refreshCityVisibility() {
+    const z = map.getZoom();
+    citiesLayer.eachLayer(layer => {
+      const rank = layer._cityRank || 3;
+      const show = (rank === 1 && z >= 4) || (rank === 2 && z >= 6) || (rank === 3 && z >= 7);
+      const el = layer.getTooltip() && layer.getTooltip().getElement();
+      if (el) el.style.display = show ? '' : 'none';
+      if (layer.setStyle) {
+        layer.setStyle({ opacity: show ? 1 : 0, fillOpacity: show ? 0.95 : 0 });
+      }
+    });
+  }
+
   satellite.addTo(map);
   provincesLayer.addTo(map);
+  citiesLayer.addTo(map);
   mapEl.classList.add('sat');
+  refreshCityVisibility();
+  map.on('zoomend', refreshCityVisibility);
 
   L.control.layers(
     { 'Satellite (Sentinel-2 cloudless)': satellite, 'Plain map': plain },
-    { 'Province outlines': provincesLayer },
+    {
+      'Province outlines': provincesLayer,
+      'Province names': provinceLabels,
+      'Cities': citiesLayer,
+    },
     { position: 'topleft', collapsed: true },
   ).addTo(map);
 
@@ -547,6 +641,11 @@ async function initMap() {
     mapEl.classList.toggle('sat', !isPlain);
     provincesLayer.setStyle({ color: isPlain ? '#6b8f71' : '#0d7a3e' });
     if (map.hasLayer(provincesLayer)) provincesLayer.bringToFront();
+    if (map.hasLayer(citiesLayer)) citiesLayer.bringToFront();
+  });
+
+  map.on('overlayadd', e => {
+    if (e.layer === citiesLayer) refreshCityVisibility();
   });
 
   map.on('click', onMapClick);
